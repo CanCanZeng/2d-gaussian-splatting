@@ -21,6 +21,8 @@ def loadCam(args, id, cam_info, resolution_scale):
 
     if args.resolution in [1, 2, 4, 8]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
+        scale_x, scale_y = 1.0 * resolution[0] / orig_w, 1.0 * resolution[1] / orig_h
+        intrinsics = cam_info.intrinsics * np.array([scale_x, scale_y, scale_x, scale_y])
     else:  # should be a type that converts to float
         if args.resolution == -1:
             if orig_w > 1600:
@@ -37,6 +39,8 @@ def loadCam(args, id, cam_info, resolution_scale):
 
         scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
+        scale_x, scale_y = 1.0 * resolution[0] / orig_w, 1.0 * resolution[1] / orig_h
+        intrinsics = cam_info.intrinsics * np.array([scale_x, scale_y, scale_x, scale_y])
 
     if len(cam_info.image.split()) > 3:
         import torch
@@ -50,6 +54,7 @@ def loadCam(args, id, cam_info, resolution_scale):
 
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
+                  intrinsics=intrinsics,
                   image=gt_image, gt_alpha_mask=loaded_mask,
                   image_name=cam_info.image_name, uid=id, data_device=args.data_device)
 

@@ -34,6 +34,7 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
+    intrinsics: np.array
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -84,11 +85,16 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
 
         if intr.model=="SIMPLE_PINHOLE":
             focal_length_x = intr.params[0]
+            focal_length_y = intr.params[0]
+            principal_point_x = intr.params[1]
+            principal_point_y = intr.params[2]
             FovY = focal2fov(focal_length_x, height)
             FovX = focal2fov(focal_length_x, width)
         elif intr.model=="PINHOLE":
             focal_length_x = intr.params[0]
             focal_length_y = intr.params[1]
+            principal_point_x = intr.params[2]
+            principal_point_y = intr.params[3]
             FovY = focal2fov(focal_length_y, height)
             FovX = focal2fov(focal_length_x, width)
         else:
@@ -99,7 +105,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         image = Image.open(image_path)
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
+                              image_path=image_path, image_name=image_name, width=width, height=height,
+                              intrinsics=np.array([focal_length_x, focal_length_y, principal_point_x, principal_point_y]))
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
