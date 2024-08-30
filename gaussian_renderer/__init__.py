@@ -54,55 +54,18 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     means3D = pc.get_xyz
     means2D = screenspace_points
+    shs = pc.get_features
     opacity = pc.get_opacity
+    scales = pc.get_scaling
+    rotations = pc.get_rotation
 
-    # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
-    # scaling / rotation by the rasterizer.
-    scales = None
-    rotations = None
-    cov3D_precomp = None
-    if pipe.compute_cov3D_python:
-        # currently don't support normal consistency loss if use precomputed covariance
-        splat2world = pc.get_covariance(scaling_modifier)
-        W, H = viewpoint_camera.image_width, viewpoint_camera.image_height
-        near, far = viewpoint_camera.znear, viewpoint_camera.zfar
-        ndc2pix = torch.tensor([
-            [W / 2, 0, 0, (W-1) / 2],
-            [0, H / 2, 0, (H-1) / 2],
-            [0, 0, far-near, near],
-            [0, 0, 0, 1]]).float().cuda().T
-        world2pix =  viewpoint_camera.full_proj_transform @ ndc2pix
-        cov3D_precomp = (splat2world[:, [0,1,3]] @ world2pix[:,[0,1,3]]).permute(0,2,1).reshape(-1, 9) # column major
-    else:
-        scales = pc.get_scaling
-        rotations = pc.get_rotation
-    
-    # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
-    # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
-    pipe.convert_SHs_python = False
-    shs = None
-    colors_precomp = None
-    if override_color is None:
-        if pipe.convert_SHs_python:
-            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
-            dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.repeat(pc.get_features.shape[0], 1))
-            dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
-            sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
-            colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
-        else:
-            shs = pc.get_features
-    else:
-        colors_precomp = override_color
-    
     rendered_image, radii, allmap = rasterizer(
         means3D = means3D,
         means2D = means2D,
         shs = shs,
-        colors_precomp = colors_precomp,
         opacities = opacity,
         scales = scales,
         rotations = rotations,
-        cov3D_precomp = cov3D_precomp
     )
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
