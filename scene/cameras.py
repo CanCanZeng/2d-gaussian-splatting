@@ -58,6 +58,21 @@ class Camera(nn.Module):
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
 
+    def to_device(self, device=None):
+        device = self.data_device if device is None else device
+        attr_dict = vars(self)
+        tensor_keys = [k for k, v in attr_dict.items() if type(v) == torch.Tensor]
+        for k in tensor_keys:
+            attr_dict[k] = attr_dict[k].to(device)
+        return self
+
+    def to_cpu(self):
+        attr_dict = vars(self)
+        tensor_keys = [k for k, v in attr_dict.items() if type(v) == torch.Tensor]
+        for k in tensor_keys:
+            attr_dict[k] = attr_dict[k].cpu()
+        return self
+
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
         self.image_width = width
