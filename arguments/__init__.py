@@ -92,6 +92,10 @@ class OptimizationParams(ParamGroup):
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
+        self.densify_abs_grad_threshold = 0.0004
+        self.abs_split_radii2D_threshold = 20
+        self.max_abs_split_points = 50_000
+        self.max_all_points = 6000_000
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
