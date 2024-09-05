@@ -21,6 +21,8 @@ def loadCam(args, id, cam_info, resolution_scale):
 
     if args.resolution in [1, 2, 4, 8]:
         resolution = round(orig_w/(resolution_scale * args.resolution)), round(orig_h/(resolution_scale * args.resolution))
+        scale_x, scale_y = 1.0 * resolution[0] / orig_w, 1.0 * resolution[1] / orig_h
+        fx, fy, cx, cy = cam_info.fx * scale_x, cam_info.fy * scale_y, cam_info.cx * scale_x, cam_info.cy * scale_y
     else:  # should be a type that converts to float
         if args.resolution == -1:
             if orig_w > 1600:
@@ -37,6 +39,8 @@ def loadCam(args, id, cam_info, resolution_scale):
 
         scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
+        scale_x, scale_y = 1.0 * resolution[0] / orig_w, 1.0 * resolution[1] / orig_h
+        fx, fy, cx, cy = cam_info.fx * scale_x, cam_info.fy * scale_y, cam_info.cx * scale_x, cam_info.cy * scale_y
 
     if len(cam_info.image.split()) > 3:
         import torch
@@ -49,7 +53,7 @@ def loadCam(args, id, cam_info, resolution_scale):
         gt_image = resized_image_rgb
 
     return Camera(colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
-                  FoVx=cam_info.FovX, FoVy=cam_info.FovY, 
+                  fx=fx, fy=fy, cx=cx, cy=cy,
                   image=gt_image, gt_alpha_mask=loaded_mask,
                   image_name=cam_info.image_name, uid=id, data_device=args.data_device)
 
@@ -78,7 +82,7 @@ def camera_to_JSON(id, camera : Camera):
         'height' : camera.height,
         'position': pos.tolist(),
         'rotation': serializable_array_2d,
-        'fy' : fov2focal(camera.FovY, camera.height),
-        'fx' : fov2focal(camera.FovX, camera.width)
+        'fy' : camera.fy,
+        'fx' : camera.fx
     }
     return camera_entry
