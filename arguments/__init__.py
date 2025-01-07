@@ -96,6 +96,8 @@ class OptimizationParams(ParamGroup):
         self.abs_split_radii2D_threshold = 20
         self.max_abs_split_points = 50_000
         self.max_all_points = 6000_000
+        self.exposure_compensation = False
+        self.lambda_exposure_compensation_tv = 10.0
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):

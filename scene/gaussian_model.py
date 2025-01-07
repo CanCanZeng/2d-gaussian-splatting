@@ -259,6 +259,7 @@ class GaussianModel:
         self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
         self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
         self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
         self.active_sh_degree = self.max_sh_degree
 
@@ -355,14 +356,20 @@ class GaussianModel:
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def densify_and_split(self, grads, grad_threshold, grads_abs, grad_abs_threshold, scene_extent, max_radii2D, N=2):
+    def densify_and_split_PGSR(self, grads, grad_threshold, grads_abs, grad_abs_threshold, max_radii2D, max_radii2D_threshold, scene_extent, N=2):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
         padded_grad[:grads.shape[0]] = grads.squeeze()
+        padded_max_radii2D = torch.zeros((n_init_points), device="cuda")
+        padded_max_radii2D[:max_radii2D.shape[0]] = max_radii2D.squeeze()
         selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
-        selected_pts_mask = torch.logical_and(selected_pts_mask,
-                                              torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
+
+        if max_radii2D_threshold == None:
+            selected_pts_mask = torch.logical_and(selected_pts_mask, torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
+        else:
+            mask_big_gs = torch.logical_or(torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent, padded_max_radii2D > max_radii2D_threshold)
+            selected_pts_mask = torch.logical_and(selected_pts_mask, mask_big_gs)
 
         if selected_pts_mask.sum() + n_init_points > self.max_all_points:
             limited_num = self.max_all_points - n_init_points
@@ -374,11 +381,9 @@ class GaussianModel:
         else:
             padded_grads_abs = torch.zeros((n_init_points), device="cuda")
             padded_grads_abs[:grads_abs.shape[0]] = grads_abs.squeeze()
-            padded_max_radii2D = torch.zeros((n_init_points), device="cuda")
-            padded_max_radii2D[:max_radii2D.shape[0]] = max_radii2D.squeeze()
             padded_grads_abs[selected_pts_mask] = 0
-            mask = (torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent) & (padded_max_radii2D > self.abs_split_radii2D_threshold)
-            padded_grads_abs[~mask] = 0
+            # mask = (torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent) & (padded_max_radii2D > self.abs_split_radii2D_threshold)
+            # padded_grads_abs[~mask] = 0
             selected_pts_mask_abs = torch.where(padded_grads_abs >= grad_abs_threshold, True, False)
             limited_num = min(self.max_all_points - n_init_points - selected_pts_mask.sum(), self.max_abs_split_points)
             if selected_pts_mask_abs.sum() > limited_num:
@@ -404,20 +409,79 @@ class GaussianModel:
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
+        
+    def densify_and_split(self, grads, grad_threshold, grads_abs, grad_abs_threshold, max_radii2D, max_radii2D_threshold, scene_extent, N=2):
+        n_init_points = self.get_xyz.shape[0]
+        # Extract points that satisfy the gradient condition
+        padded_grad = torch.zeros((n_init_points), device="cuda")
+        padded_grad[:grads.shape[0]] = grads.squeeze()
+        selected_pts_mask = torch.where(padded_grad >= grad_abs_threshold, True, False)
 
-    def densify_and_clone(self, grads, grad_threshold, scene_extent):
+        if max_radii2D_threshold == None:
+            selected_pts_mask = torch.logical_and(selected_pts_mask, torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
+        else:
+            padded_max_radii2D = torch.zeros((n_init_points), device="cuda")
+            padded_max_radii2D[:max_radii2D.shape[0]] = max_radii2D.squeeze()
+            mask_big_gs = torch.logical_or(torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent, padded_max_radii2D > max_radii2D_threshold)
+            selected_pts_mask = torch.logical_and(selected_pts_mask, mask_big_gs)
+
+        # if selected_pts_mask.sum() + n_init_points > self.max_all_points:
+        #     limited_num = self.max_all_points - n_init_points
+        #     padded_grad[~selected_pts_mask] = 0
+        #     ratio = limited_num / float(n_init_points)
+        #     threshold = torch.quantile(padded_grad, (1.0 - ratio))
+        #     selected_pts_mask = torch.where(padded_grad > threshold, True, False)
+        #     # print(f"split {selected_pts_mask.sum()}, raddi2D {padded_max_radii2D.max()} ,{padded_max_radii2D.median()}")
+        # else:
+        #     padded_grads_abs = torch.zeros((n_init_points), device="cuda")
+        #     padded_grads_abs[:grads_abs.shape[0]] = grads_abs.squeeze()
+        #     padded_grads_abs[selected_pts_mask] = 0
+        #     # mask = (torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent) & (padded_max_radii2D > self.abs_split_radii2D_threshold)
+        #     # padded_grads_abs[~mask] = 0
+        #     selected_pts_mask_abs = torch.where(padded_grads_abs >= grad_abs_threshold, True, False)
+        #     limited_num = min(self.max_all_points - n_init_points - selected_pts_mask.sum(), self.max_abs_split_points)
+        #     if selected_pts_mask_abs.sum() > limited_num:
+        #         ratio = limited_num / float(n_init_points)
+        #         threshold = torch.quantile(padded_grads_abs, (1.0-ratio))
+        #         selected_pts_mask_abs = torch.where(padded_grads_abs > threshold, True, False)
+        #     selected_pts_mask = torch.logical_or(selected_pts_mask, selected_pts_mask_abs)
+        #     # print(f"split {selected_pts_mask.sum()}, abs {selected_pts_mask_abs.sum()}, raddi2D {padded_max_radii2D.max()} ,{padded_max_radii2D.median()}")
+
+        stds = self.get_scaling[selected_pts_mask].repeat(N,1)
+        stds = torch.cat([stds, 0 * torch.ones_like(stds[:,:1])], dim=-1)
+        means = torch.zeros_like(stds)
+        samples = torch.normal(mean=means, std=stds)
+        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
+        new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
+        new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
+        new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
+        new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
+
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+
+        prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
+        self.prune_points(prune_filter)
+
+    def densify_and_clone(self, grads, grad_threshold, max_radii2D, max_radii2D_threshold, scene_extent):
         n_init_points = self.get_xyz.shape[0]
         # Extract points that satisfy the gradient condition
         selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
-        selected_pts_mask = torch.logical_and(selected_pts_mask,
+        if max_radii2D_threshold == None:
+            selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
-        if selected_pts_mask.sum() + n_init_points > self.max_all_points:
-            limited_num = self.max_all_points - n_init_points
-            grads_tmp = grads.squeeze().clone()
-            grads_tmp[~selected_pts_mask] = 0
-            ratio = limited_num / float(n_init_points)
-            threshold = torch.quantile(grads_tmp, (1.0 - ratio))
-            selected_pts_mask = torch.where(grads_tmp > threshold, True, False)
+        else:
+            mask_small_gs = torch.logical_and(torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent, max_radii2D <= max_radii2D_threshold)
+            selected_pts_mask = torch.logical_and(selected_pts_mask, mask_small_gs)
+
+        # if selected_pts_mask.sum() + n_init_points > self.max_all_points:
+        #     limited_num = self.max_all_points - n_init_points
+        #     grads_tmp = grads.squeeze().clone()
+        #     grads_tmp[~selected_pts_mask] = 0
+        #     ratio = limited_num / float(n_init_points)
+        #     threshold = torch.quantile(grads_tmp, (1.0 - ratio))
+        #     selected_pts_mask = torch.where(grads_tmp > threshold, True, False)
         
         if selected_pts_mask.sum() == 0:
             return
@@ -445,8 +509,8 @@ class GaussianModel:
         abs_grads[abs_grads.isnan()] = 0.0
         max_radii2D = self.max_radii2D.clone()
 
-        self.densify_and_clone(grads, max_grad, extent)
-        self.densify_and_split(grads, max_grad, abs_grads, max_abs_grad, extent, max_radii2D)
+        self.densify_and_clone(grads, max_grad, max_radii2D, max_screen_size, extent)
+        self.densify_and_split(grads, max_grad, abs_grads, max_abs_grad, max_radii2D, max_screen_size, extent)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:

@@ -50,7 +50,7 @@ if not args.skip_metrics:
     all_scenes = tnt_360_scenes + tnt_large_scenes
 
     for scene in all_scenes:
-        ply_file = f"{args.output_path}/{scene}/train/ours_{iteration}/fuse_post.ply"
+        ply_file = f"{args.output_path}/{scene}/train/ours_30000/fuse_post.ply"
         string = f"OMP_NUM_THREADS=4 python {script_dir}/eval_tnt/run.py " + \
             f"--dataset-dir {args.TNT_GT}/{scene} " + \
             f"--traj-path {args.TNT_data}/{scene}/{scene}_COLMAP_SfM.log " + \

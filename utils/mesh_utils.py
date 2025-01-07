@@ -18,6 +18,7 @@ from utils.render_utils import save_img_f32, save_img_u8
 from functools import partial
 import open3d as o3d
 import trimesh
+from PIL import Image
 
 def post_process_mesh(mesh, cluster_to_keep=1000):
     """
@@ -48,9 +49,9 @@ def to_cam_open3d(viewpoint_stack):
         W = viewpoint_cam.image_width
         H = viewpoint_cam.image_height
         ndc2pix = torch.tensor([
-            [W / 2, 0, 0, (W-1) / 2],
-            [0, H / 2, 0, (H-1) / 2],
-            [0, 0, 0, 1]]).float().cuda().T
+            [W / 2, 0, 0, W / 2],
+            [0, H / 2, 0, H / 2],
+            [0, 0, 0, 1]]).float().T
         intrins =  (viewpoint_cam.projection_matrix @ ndc2pix)[:3,:3].T
         intrinsic=o3d.camera.PinholeCameraIntrinsic(
             width=viewpoint_cam.image_width,
@@ -121,6 +122,31 @@ class GaussianExtractor(object):
         # self.alphamaps = torch.stack(self.alphamaps, dim=0)
         # self.depth_normals = torch.stack(self.depth_normals, dim=0)
         self.estimate_bounding_sphere()
+
+    # @torch.no_grad()
+    # def reconstruction(self, viewpoint_stack, path):
+    #     """
+    #     reconstruct radiance field given cameras
+    #     """
+    #     self.clean()
+    #     self.viewpoint_stack = viewpoint_stack
+        
+    #     render_path = os.path.join(path, "renders")
+    #     vis_path = os.path.join(path, "vis")
+    #     for idx, viewpoint_cam in tqdm(enumerate(self.viewpoint_stack), desc="reconstruct radiance fields"):
+    #         rgb_path = os.path.join(render_path, '{0:05d}'.format(idx) + ".png")
+    #         depth_path = os.path.join(vis_path, 'depth_{0:05d}'.format(idx) + ".tiff")
+    #         rgb = Image.open(rgb_path)
+    #         rgb = torch.from_numpy(np.array(rgb)) / 255
+    #         rgb = rgb.permute(2, 0, 1)
+    #         self.rgbmaps.append(rgb.cpu())
+            
+    #         depth = Image.open(depth_path)
+    #         depth = torch.from_numpy(np.array(depth))
+    #         depth = depth.unsqueeze(dim=-1).permute(2, 0, 1)
+    #         self.depthmaps.append(depth.cpu())
+
+    #     self.estimate_bounding_sphere()
 
     def estimate_bounding_sphere(self):
         """

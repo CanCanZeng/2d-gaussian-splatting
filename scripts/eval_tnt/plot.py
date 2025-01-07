@@ -34,6 +34,7 @@
 # https://tanksandtemples.org/license/
 
 import matplotlib.pyplot as plt
+plt.ioff()  # 关闭交互模式
 from cycler import cycler
 
 
